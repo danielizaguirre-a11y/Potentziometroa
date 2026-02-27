@@ -1,101 +1,79 @@
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 
+// -------- KONFIGURAZIOA --------
+const char* ssid = "OLP";
+const char* password = "oteitzaLP";
 
-// WiFi konfigurazioa
-const char* ssid = "Taldea_2"; //Zuen Wifia
-const char* password = "OLPtaldea.2"; //Zuen Wifiaren pasahitza
+const char* mqtt_server = "eu.thingsboard.cloud";
+const char* token = "JRkVQ2gaZsEHFYB9OHiv";
 
+#define POT_PIN A0
 
-// MQTT konfigurazioa
-const char* mqtt_server = "192.168.1.160";  //Zuen ioMBianaren IP helbidea
-const int mqtt_port = 1883;
-const char* mqtt_user = "iompi";
-const char* mqtt_pass = "iompi";
-const char* topic = "2";  //Zuen nodMCU-a. Gogoratu 3 dituzuela
-
-
-// Objektuak
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-
-// Pinak
-const int flashButton = 0;          // FLASH botoia (GPIO0)
-const int led = LED_BUILTIN;        // LED integratua (GPIO2 normalean)
-
-
-// WiFi konexioa
-void setup_wifi() {
+// -------- WIFI KONEXIOA --------
+void wifi_konektatu() {
   delay(10);
   Serial.println();
-  Serial.print("WiFi-ra konektatzen: ");
+  Serial.print("WiFira konektatzen: ");
   Serial.println(ssid);
 
-
   WiFi.begin(ssid, password);
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
 
-
   Serial.println("");
-  Serial.println("WiFira konektatua!");
-  Serial.print("IP helbidea: ");
-  Serial.println(WiFi.localIP());
+  Serial.println("WiFi konektatuta!");
 }
 
-
-// MQTT konexioa
-void reconnect() {
+// -------- MQTT BERRIZ KONEXIOA --------
+void berriz_konektatu() {
   while (!client.connected()) {
-    Serial.print("MQTT zerbitzarira konektatzen...");
-    if (client.connect("NodeMCUClient2", mqtt_user, mqtt_pass)) {
-      Serial.println("konektatua!");
+    Serial.print("ThingsBoard-era konektatzen...");
+    if (client.connect("NodeMCU", token, NULL)) {
+      Serial.println("Konektatuta!");
     } else {
-      Serial.print("Huts egin du, rc=");
+      Serial.print("Errorea rc=");
       Serial.print(client.state());
-      Serial.println(" 5 segundo barru berriz saiatuko da...");
+      Serial.println(" 5 segundotan berriz saiatzen...");
       delay(5000);
     }
   }
 }
 
-
 void setup() {
-  Serial.begin(9600);
-  pinMode(flashButton, INPUT_PULLUP);
-  pinMode(led, OUTPUT);
-  digitalWrite(led, HIGH);  // LED itzalita (aktibo baxua da)
- 
-  setup_wifi();
-  client.setServer(mqtt_server, mqtt_port);
+  Serial.begin(115200);
+  wifi_konektatu();
+  client.setServer(mqtt_server, 1883);
 }
 
-
 void loop() {
+
   if (!client.connected()) {
-    reconnect();
+    berriz_konektatu();
   }
   client.loop();
 
+  // Potentziometroaren balioa irakurri (0–1023)
+  int balioGordina = analogRead(POT_PIN);
 
-  // FLASH botoia sakatuta dagoen detektatu (LOW denean)
-  if (digitalRead(flashButton) == LOW) {
-    Serial.println("FLASH botoia sakatuta! Mezua bidaltzen...");
+  // 0–1023 → 0–100 eskalara bihurtu
+  int balioMapeatua = map(balioGordina, 0, 1023, 0, 100);
 
+  // Voltaje kalkulua (aukerakoa)
+  float tentsioa = balioGordina * (3.3 / 1023.0);
 
-    // TRUE mezua bidali
-    client.publish(topic, "TRUE");
+  char payload[120];
+  sprintf(payload, "{\"potentziometroa\":%d,\"tentsioa\":%.2f}", balioMapeatua, tentsioa);
 
+  client.publish("v1/devices/me/telemetry", payload);
 
-    // LED piztu mezua bidaltzean (aktibo baxua!)
-    digitalWrite(led, LOW);
-    digitalWrite(led, HIGH);
+  Serial.println(payload);
 
-
-    // botoia askatu arte itxaron
-    while (digitalRead(flashButton) == LOW);
-  }
+  delay(2000); // 2 segundoro bidali
 }
